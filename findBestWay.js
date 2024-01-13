@@ -1,8 +1,12 @@
 const Position = require("./Position")
 const Direction = require("./Direction")
+const Character = require("./Character")
+const Coin = require("./Coin")
 
-async function findBestWay(matrix, position = new Position(0, 0), target = new Position(0,0), direction, cost = 0, matrixChecked =[[]], road = []) {
+let count = 0
+function findBestWay(matrix, position = new Position(0, 0), target = new Position(0,0), direction, cost = 0, matrixChecked =[[]], road = []) {
     // check processing
+    count += 1
     const _matrixChecked = matrixChecked
     _matrixChecked[position.y][position.x] = 1
 
@@ -30,7 +34,7 @@ async function findBestWay(matrix, position = new Position(0, 0), target = new P
         // calc cost of next road
         let listCost= []
         for (const f of listAsync) {
-            listCost.push(await f())
+            listCost.push(f())
         }
 
         // choose min cost
@@ -51,6 +55,47 @@ async function findBestWay(matrix, position = new Position(0, 0), target = new P
     return false
 }
 
+function findFastWay(matrix, position = new Position(0, 0), target = new Position(0,0), direction, cost = 0, road = []) {
+    // check processing
+    count += 1
+    const _matrixChecked = matrix
+    _matrixChecked[position.y][position.x] = 1
+
+    // end
+    if (position.x == target.x && position.y == target.y) {
+        _matrixChecked[position.y][position.x] = 0
+        return {cost, road}
+    }
+    
+    // check valid direction
+    const up = checkUp(matrix, position, direction)
+    const down = checkDown(matrix, position, direction)
+    const left = checkLeft(matrix, position, direction)
+    const right = checkRight(matrix, position, direction)
+
+    // push to stack: up, down, left, right
+    let listAsync = []
+    pushListAsync(matrix, up, target, Direction.DOWN, cost, listAsync, road)
+    pushListAsync(matrix, down, target, Direction.UP, cost, listAsync, road)
+    pushListAsync(matrix, left, target, Direction.RIGHT, cost, listAsync, road)
+    pushListAsync(matrix, right, target, Direction.LEFT, cost, listAsync, road)
+
+    // process move
+    if (listAsync.length > 0) {
+        // calc cost of next road
+        for (const f of listAsync) {
+            const c = f()
+            if (c && c.cost) {
+                _matrixChecked[position.y][position.x] = 0
+                return c
+            }
+        }
+    }
+    
+    // wrong path
+    _matrixChecked[position.y][position.x] = 0
+    return false
+}
 function checkUp(matrix = [[]], position = new Position(0, 0), direction) {
     if (direction == Direction.UP) {
         return false
@@ -96,16 +141,17 @@ function checkRight(matrix=[[]], position = new Position(0, 0), direction) {
     }
     return false
 }
-function pushListAsync(matrix, newPos, target, direction, cost, matrixChecked, listAsync, road) {
-    if (newPos && matrixChecked[newPos.y][newPos.x] == 0) {
-        listAsync.push(async () => {
-            return await findBestWay(matrix, newPos, target, direction, cost + 1, matrixChecked, [...road, {x: newPos.x, y: newPos.y}])
+function pushListAsync(matrix, newPos, target, direction, cost, listAsync, road) {
+    if (newPos && matrix[newPos.y][newPos.x] == 0) {
+        listAsync.push(() => {
+            return findFastWay(matrix, newPos, target, direction, cost + 1, [...road, new Position(newPos.x, newPos.y)])
         })
     }
 }
-async function main(matrix, position = new Position(0, 0), target = new Position(0,0), direction, cost = 0) {
-    const matrixChecked = Array.from({ length: matrix.length }, () => Array(matrix.length).fill(0));
-    const rs = await findBestWay(matrix, position, target, direction, cost, matrixChecked)
+
+
+function main(matrix, position = new Position(0, 0), target = new Position(0,0), direction, cost = 0) {
+    const rs = findFastWay(matrix, position, target, direction, cost)
     return rs
 }
 module.exports = main

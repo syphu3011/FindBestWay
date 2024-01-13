@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maze game</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        td {
+            width: 20px; 
+            height: 20px; 
+        }
+    </style>
+</head>
+<body id="content" style="margin: 0;padding: 0;background-color: black;">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.1.2/socket.io.js"></script>
+    <script>
+        const socket = io({ query: { token: Math.random() } });
+
+        socket.on('updateContent', (data) => {
+            console.log('Updated content received:', data);
+
+            // Cập nhật nội dung HTML ở đây, ví dụ:
+            document.getElementById('content').innerHTML = data;
+        });
+    </script>
+</body>
+</html>

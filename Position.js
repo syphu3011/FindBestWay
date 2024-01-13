@@ -13,6 +13,12 @@ function Position(x, y) {
     this.Right = () => {
         return new Position(this.x + 1, this.y)
     }
+    this.equals = (pos) => {
+        if (this.x == pos.x && this.y == pos.y) {
+            return true
+        }
+        return false
+    }
 }
 
 module.exports = Position
