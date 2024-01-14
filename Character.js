@@ -25,5 +25,8 @@ function Character(user = new User(1,"sdf",29, 5), speed_atk = 1, speed_run = 1,
         }
         this.countCoin += 1
     }
+    this.attack = (wall) => {
+        wall.beAttacked(this.speed_atk)
+    }
 }
 module.exports = Character

@@ -161,23 +161,37 @@ const Game = require('./Game');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
+const cookie = require('cookie')
+const cookieParser = require('cookie-parser');
 
 app.use(express.static('public'));
-
+app.use(cookieParser());
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
-let check = true
+
+let saveGame = {}
 io.on('connection', (socket) => {
     console.log('A user connected');
-    if (check) {
-        check = false
-        new Game(new User(1, "ok", 23, 5), 50, 30, io)
+    const cookies = cookie.parse(socket.handshake.headers.cookie)
+    socket.username = cookies.username
+    if (socket.username) {
+        if (!saveGame[cookies.username]) {
+            const game = new Game(new User(1, cookies.username, 23, 5, socket.id), 50, 30, io)
+            saveGame[socket.username] = game
+        }
+        else {
+            saveGame[cookies.username].isActive = true
+            saveGame[cookies.username].user.socketId = socket.id
+            saveGame[cookies.username].playingGame()
+        }
     }
 
     socket.on('disconnect', () => {
         console.log('User disconnected');
+        saveGame[socket.username].isActive = false
     });
+    io.on
 });
 
 http.listen(3000, () => {

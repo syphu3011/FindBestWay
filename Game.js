@@ -2,6 +2,8 @@ const {assignCharWithCoin, assignCoin} = require("./Assign")
 const Character = require("./Character")
 const Coin = require("./Coin")
 const Position = require("./Position")
+const { randomPositionOnMatrix } = require("./PositionUtils")
+const Wall = require("./Wall")
 const mazeGenerator = require("./mazeGenerator")
 
 function Game(user, widthMap = 50, heightMap = 30, io) {
@@ -9,11 +11,12 @@ function Game(user, widthMap = 50, heightMap = 30, io) {
     this.map = initMap(widthMap / 2, heightMap / 2)
     this.listChar = initListChar(this.user, this.map)
     this.listCoin = initListCoin(this.user, 100, this.map)
+    this.listWall = initListWall(this.user, this.listCoin, 50, this.map)
+    this.isActive = true
     const self = this
-    assignCharWithCoin(this.listChar,  this.listCoin, this.map)
-    const newMap = changeMapWithCharAndCoin(this.listChar, this.listCoin, this.map)
-    playingGame()
-    function playingGame() {
+    assignCharWithCoin(this.listChar, this.listCoin, this.map)
+    const newMap = changeMapWithCharAndCoin(this.listChar, this.listCoin, this.listWall, this.map)
+    this.playingGame = () => {
         // set up
         let contentTable = `<table>`
         // let head = `<tr><td style="color: white"></td>`
@@ -41,56 +44,26 @@ function Game(user, widthMap = 50, heightMap = 30, io) {
                     case 4: 
                         content += `<td style="color: yellow">0 `+"</td>"
                         break
+                    default:
+                        content += `<td style="color: orange">`+(e-5)+"</td>"
+                        break
                 }
             })
             content += "</tr>"
             contentTable += content
         })
         contentTable += "</table>"
-        io.emit("updateContent", contentTable)
-
-        // logic game
-        self.listChar.forEach((e) => {
-            newMap[e.position.y][e.position.x] = 0
-            e.move()
-            if (newMap[e.position.y][e.position.x] == 4) {
-                // Check collect coin
-                for (const coin of self.listCoin) {
-                    // check is valid to collect
-                    if (coin.position.equals(e.position)) {
-                        // remove coin
-                        self.listCoin = self.listCoin.filter(c => c != coin)
-                        // collect
-                        e.takeCoin(coin)
-                        if (self.listCoin.length == 0) {
-                            self.listChar.forEach(e => {
-                                e.road = []
-                            })
-                            return
-                        }
-                        // assign new
-                        if (coin == e.coin) {
-                            assignCoin(e, self.listCoin, self.map)
-                        }
-                        else if (coin.character.length > 0){
-                            coin.character.forEach(ch => {
-                                if (ch != e) {
-                                    ch.countMove = 0
-                                    assignCoin(ch, self.listCoin, self.map)
-                                }
-                            })
-                        }
-                        break
-                    }
-                }
-            }
-            newMap[e.position.y][e.position.x] = 3
-        })
-
+        io.to(self.user.socketId).emit("updateContent", contentTable)
+        next(self, newMap)
         // refresh every 100 ms
-        setTimeout(playingGame, 100)
+        if (self.isActive) {
+            setTimeout(self.playingGame, 100)
+        }
     }
+    this.playingGame()
 }
+
+// init
 function initMap(width, height) {
     return mazeGenerator(width, height).map
 }
@@ -100,7 +73,6 @@ function initListChar(user, matrix) {
     for (const char of user.listChar) {
         const position = randomPositionOnMatrix(matrix, listPosition)
         char.position = position 
-        // matrix[position.y][position.x] = 3
         listPosition.push(position)
     }
     return user.listChar
@@ -113,11 +85,22 @@ function initListCoin(user, numberCoin, matrix) {
         const coin = new Coin(position)
         listCoin.push(coin)
         listPosition.push(position)
-        // matrix[position.y][position.x] = 4
     }
     return listCoin
 }
-function changeMapWithCharAndCoin(listChar, listCoin, matrix) {
+function initListWall(user, listCoin, numberWall, matrix) {
+    const listPosition = user.listChar.map(e => e.position)
+    listPosition.push(...(listCoin.map(e => e.position)))
+    const listWall = []
+    for (let i = 0; i < numberWall; i++) {
+        const position = randomPositionOnMatrix(matrix, listPosition)
+        const wall = new Wall(10, position)
+        listWall.push(wall)
+        listPosition.push(position)
+    }
+    return listWall
+}
+function changeMapWithCharAndCoin(listChar, listCoin, listWall, matrix) {
     const newMatrix = [...(matrix.map(row => [...row]))]
     listChar.forEach(e => {
         const posChar = e.position
@@ -127,37 +110,101 @@ function changeMapWithCharAndCoin(listChar, listCoin, matrix) {
         const posCoin = e.position
         newMatrix[posCoin.y][posCoin.x] = 4
     })
+    listWall.forEach(e => {
+        const posWall = e.position
+        newMatrix[posWall.y][posWall.x] = 5 + e.hp
+    })
     return newMatrix
 }
-function randomPositionOnMatrix(matrix, listPosition = [new Position(0,0)]) {
-    let position = new Position(0, 0)
-    do {
-        position.x = randomOnRange(1, matrix.length - 1)
-        position.y = randomOnRange(1, matrix.length - 1)
-    }
-    while(!isValid(position, listPosition, matrix));
-    return position
+
+// Game
+function next(self, newMap) {
+    // logic game
+    self.listChar.forEach((e) => {
+        move(e, self, newMap)
+    })
 }
-function isValid(position, listPosition, matrix) {
-    if (matrix[position.y][position.x] == 1 || isRepeat(position, listPosition)) {
-        return false
-    }
-    return true
+function updateMap(newMap, char, value) {
+    newMap[char.position.y][char.position.x] = value
 }
-function isRepeat(position, listPosition) {
-    for(const pos of listPosition) {
-        if (position.equals(pos)) {
-            return true
+
+function move(char, self, newMap) {
+    let nextPos = null
+    if (char.road.length > char.countMove) {
+        nextPos = char.road[char.countMove]
+    }
+    if (nextPos) {
+        if (newMap[nextPos.y][nextPos.x] > 5) {
+            checkAndAttackWall(self, char, nextPos, newMap)
+        }
+        else {
+            updateMap(newMap, char, 0)
+            char.move()
+            if (newMap[char.position.y][char.position.x] == 4) {
+                // Check collect coin
+                checkAndCollectCoin(self, char)
+            }
+            updateMap(newMap, char, 3)
         }
     }
-    return false
 }
-function randomOnRange(from, to) {
-    let rand = 0
-    do {
-        rand = Math.floor(Math.random() * to)
+function checkAndAttackWall(self, char, pos, newMap) {
+    for (const wall of self.listWall) {
+        // check is valid to attack
+        if (wall.position.equals(pos)) {
+            attackWall(char, wall, self, newMap)
+            break
+        }
     }
-    while (rand < from)
-    return rand
+}
+function attackWall(char, wall, self, newMap) {
+    char.attack(wall)
+    newMap[wall.position.y][wall.position.x] -= char.speed_atk
+    if (wall.hp <= 0) {
+        self.listWall = self.listWall.filter(e => e != wall)
+        updateMap(newMap, char, 0)
+    }
+}
+function checkAndCollectCoin(self, char) {
+    for (const coin of self.listCoin) {
+        // check is valid to collect
+        if (coin.position.equals(char.position)) {
+            // remove coin
+            removeCoin(self, coin)
+            // collect
+            collectCoin(char, self, coin)
+            // assign new
+            assignNew(coin, char, self)
+            break
+        }
+    }
+}
+
+function removeCoin(self, coin) {
+    self.listCoin = self.listCoin.filter(c => c != coin)
+}
+
+function collectCoin(char, self, coin) {
+    char.takeCoin(coin)
+    if (self.listCoin.length == 0) {
+        self.listChar.forEach(e => {
+            e.road = []
+        })
+        return
+    }
+}
+
+function assignNew(coin, e, self) {
+    if (coin == e.coin) {
+        assignCoin(e, self.listCoin, self.map)
+    }
+    else if (coin.character.length > 0){
+        coin.character.forEach(ch => {
+            if (ch != e) {
+                ch.countMove = 0
+                assignCoin(ch, self.listCoin, self.map)
+            }
+        })
+    }
 }
 module.exports = Game
